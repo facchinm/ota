@@ -13,5 +13,5 @@ func main() {
 	}
 
 	otafile_path := os.Args[1]
-	StartOTA(otafile_path)
+	ota.StartOTA(otafile_path)
 }
