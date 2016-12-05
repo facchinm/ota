@@ -2,6 +2,7 @@ package ota
 
 import (
 	"fmt"
+	"github.com/braintree/manners"
 	"github.com/gorilla/handlers"
 	"hash/crc32"
 	"io/ioutil"
@@ -81,7 +82,7 @@ func StartOTA(filename string) bool {
 
 	http.Handle("/", fs)
 	go func() {
-		http.ListenAndServe(":65201", handlers.LoggingHandler(os.Stdout, http.DefaultServeMux))
+		manners.ListenAndServe(":65201", handlers.LoggingHandler(os.Stdout, http.DefaultServeMux))
 	}()
 
 	crcStr := strconv.FormatUint(uint64(crc32.ChecksumIEEE(content)), 10)
@@ -103,6 +104,7 @@ func StartOTA(filename string) bool {
 	checkError(err)
 
 	fmt.Println(string(buf[0:n]))
+	manners.Close()
 
 	if strings.Contains(string(buf[0:n]), "OK") {
 		return true
