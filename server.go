@@ -13,6 +13,8 @@ import (
 	"strings"
 )
 
+var Crc32Str string
+
 func getIp() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
@@ -30,11 +32,11 @@ func getIp() string {
 	return ""
 }
 
-func PrepareChunks(filename string) (string, string, error) {
+func PrepareChunks(filename string) (string, error) {
 	content, _ := ioutil.ReadFile(filename)
 	dir, err := ioutil.TempDir("", "ota")
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
 	padding := make([]byte, ((len(content)/1024)+1)*1024-len(content))
@@ -53,13 +55,13 @@ func PrepareChunks(filename string) (string, string, error) {
 			j = i + 1024
 		}
 		if err := ioutil.WriteFile(tmpfn, content[i:j], 0666); err != nil {
-			return "", "", err
+			return "", err
 		}
 	}
 
-	crcStr := strconv.FormatUint(uint64(crc32.ChecksumIEEE(content)), 10)
+	Crc32Str = strconv.FormatUint(uint64(crc32.ChecksumIEEE(content)), 10)
 
-	return dir, crcStr, nil
+	return dir, nil
 }
 
 func SendOTAUDPBroadcast(crc32Str string) error {

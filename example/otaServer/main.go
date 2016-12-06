@@ -13,13 +13,13 @@ func main() {
 	}
 
 	otafile_path := os.Args[1]
-	temp_dir, crc32sum, err := ota.PrepareChunks(otafile_path)
+	temp_dir, err := ota.PrepareChunks(otafile_path)
 	checkError(err)
 
 	// start in another thread!!!!
 	go ota.StartHTTPServer(temp_dir)
 
-	err = ota.SendOTAUDPBroadcast(crc32sum)
+	err = ota.SendOTAUDPBroadcast(ota.Crc32Str)
 	checkError(err)
 
 	res, err := ota.ReadUDPResponse()
