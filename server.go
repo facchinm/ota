@@ -2,11 +2,9 @@ package ota
 
 import (
 	"fmt"
-	"github.com/braintree/manners"
 	"github.com/gorilla/handlers"
 	"hash/crc32"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -32,27 +30,11 @@ func getIp() string {
 	return ""
 }
 
-func StartOTA(filename string) bool {
-
-	otafile_path := filename
-
-	//udpAddr, err := net.ResolveUDPAddr("udp4", "192.168.255.255:65500")
-	//checkError(err)
-
-	port := 65500
-
-	BROADCAST_IPv4 := net.IPv4(255, 255, 255, 255)
-
-	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{
-		IP:   BROADCAST_IPv4,
-		Port: port,
-	})
-	checkError(err)
-
-	content, _ := ioutil.ReadFile(otafile_path)
+func PrepareChunks(filename string) (string, string, error) {
+	content, _ := ioutil.ReadFile(filename)
 	dir, err := ioutil.TempDir("", "ota")
 	if err != nil {
-		log.Fatal(err)
+		return "", "", err
 	}
 
 	padding := make([]byte, ((len(content)/1024)+1)*1024-len(content))
@@ -61,8 +43,6 @@ func StartOTA(filename string) bool {
 	}
 
 	content = append(content, padding...)
-
-	defer os.RemoveAll(dir) // clean up
 
 	for i := 0; i < len(content); i = i + 1024 {
 		tmpfn := filepath.Join(dir, "otachunk"+strconv.Itoa(i))
@@ -73,49 +53,72 @@ func StartOTA(filename string) bool {
 			j = i + 1024
 		}
 		if err := ioutil.WriteFile(tmpfn, content[i:j], 0666); err != nil {
-			log.Fatal(err)
+			return "", "", err
 		}
 	}
 
-	fmt.Println(filepath.Join(dir, ""))
-	fs := http.FileServer(http.Dir(filepath.Join(dir, "")))
-
-	http.Handle("/", fs)
-	go func() {
-		manners.ListenAndServe(":65201", handlers.LoggingHandler(os.Stdout, http.DefaultServeMux))
-	}()
-
 	crcStr := strconv.FormatUint(uint64(crc32.ChecksumIEEE(content)), 10)
 
-	_, err = conn.Write([]byte("OTAUPLOADhttp://" + getIp() + ":65201/" + crcStr))
-	checkError(err)
+	return dir, crcStr, nil
+}
 
+func SendOTAUDPBroadcast(crc32Str string) error {
+	port := 65500
+
+	BROADCAST_IPv4 := net.IPv4(255, 255, 255, 255)
+
+	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{
+		IP:   BROADCAST_IPv4,
+		Port: port,
+	})
+
+	fmt.Printf("Sending UDP broadcast on port %d\n", port)
+
+	_, err = conn.Write([]byte("OTAUPLOADhttp://" + getIp() + ":65201/" + crc32Str))
+	return err
+}
+
+func StartHTTPServer(directory string) error {
+	fmt.Println("Saving chunks in " + filepath.Join(directory, ""))
+	fs := http.FileServer(http.Dir(filepath.Join(directory, "")))
+
+	http.Handle("/", fs)
+	http.ListenAndServe(":65201", handlers.LoggingHandler(os.Stdout, http.DefaultServeMux))
+
+	return nil
+}
+
+func ReadUDPResponse() (bool, error) {
 	/* Lets prepare a address at any address at port 10001*/
 	ServerAddr, err := net.ResolveUDPAddr("udp", ":65500")
-	checkError(err)
+	if err != nil {
+		return false, err
+	}
 
 	/* Now listen at selected port */
 	ServerConn, err := net.ListenUDP("udp", ServerAddr)
-	checkError(err)
+	if err != nil {
+		return false, err
+	}
 	defer ServerConn.Close()
 
 	buf := make([]byte, 1024)
 	n, _, err := ServerConn.ReadFromUDP(buf)
-	checkError(err)
+	if err != nil {
+		return false, err
+	}
 
 	fmt.Println(string(buf[0:n]))
-	manners.Close()
 
 	if strings.Contains(string(buf[0:n]), "OK") {
-		return true
+		return true, nil
 	} else {
-		return false
+		return false, nil
 	}
+
 }
 
-func checkError(err error) {
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal error ", err.Error())
-		os.Exit(1)
-	}
+func RemoveTempFiles(dir string) {
+
+	os.RemoveAll(dir) // clean up temp files
 }
