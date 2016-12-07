@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/gorilla/handlers"
 	"hash/crc32"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func getIp() string {
@@ -29,6 +31,12 @@ func getIp() string {
 		}
 	}
 	return ""
+}
+
+var srvCLoser io.Closer
+
+func CloseServer() error {
+	return srvCLoser.Close()
 }
 
 func StartOTA(filename string) bool {
@@ -80,9 +88,7 @@ func StartOTA(filename string) bool {
 	fs := http.FileServer(http.Dir(filepath.Join(dir, "")))
 
 	http.Handle("/", fs)
-	go func() {
-		http.ListenAndServe(":65201", handlers.LoggingHandler(os.Stdout, http.DefaultServeMux))
-	}()
+	srvCLoser, err = ListenAndServeWithClose(":65201", handlers.LoggingHandler(os.Stdout, http.DefaultServeMux))
 
 	crcStr := strconv.FormatUint(uint64(crc32.ChecksumIEEE(content)), 10)
 
@@ -109,6 +115,45 @@ func StartOTA(filename string) bool {
 	} else {
 		return false
 	}
+}
+
+func ListenAndServeWithClose(addr string, handler http.Handler) (sc io.Closer, err error) {
+
+	var listener net.Listener
+
+	srv := &http.Server{Addr: addr, Handler: handler}
+
+	if addr == "" {
+		addr = ":http"
+	}
+
+	listener, err = net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+
+	go func() {
+		err := srv.Serve(tcpKeepAliveListener{listener.(*net.TCPListener)})
+		if err != nil {
+			log.Println("HTTP Server Error - ", err)
+		}
+	}()
+
+	return listener, nil
+}
+
+type tcpKeepAliveListener struct {
+	*net.TCPListener
+}
+
+func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
+	tc, err := ln.AcceptTCP()
+	if err != nil {
+		return
+	}
+	tc.SetKeepAlive(true)
+	tc.SetKeepAlivePeriod(3 * time.Minute)
+	return tc, nil
 }
 
 func checkError(err error) {
