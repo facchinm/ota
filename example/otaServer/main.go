@@ -13,6 +13,7 @@ func main() {
 	}
 
 	otafile_path := os.Args[1]
-	ota.StartOTA(otafile_path)
+	crc := ota.ServeFiles(otafile_path, "")
+	ota.StartOTA(crc)
 	ota.CloseServer()
 }

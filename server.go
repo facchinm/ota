@@ -39,27 +39,21 @@ func CloseServer() error {
 	return srvCLoser.Close()
 }
 
-func StartOTA(filename string) bool {
-
+func ServeFiles(filename string, temppath string) string {
 	otafile_path := filename
 
 	//udpAddr, err := net.ResolveUDPAddr("udp4", "192.168.255.255:65500")
 	//checkError(err)
 
-	port := 65500
-
-	BROADCAST_IPv4 := net.IPv4(255, 255, 255, 255)
-
-	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{
-		IP:   BROADCAST_IPv4,
-		Port: port,
-	})
-	checkError(err)
+	dir := temppath
+	var err error
 
 	content, _ := ioutil.ReadFile(otafile_path)
-	dir, err := ioutil.TempDir("", "ota")
-	if err != nil {
-		log.Fatal(err)
+	if len(dir) == 0  { 
+		dir, err = ioutil.TempDir("", "ota")
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	padding := make([]byte, ((len(content)/1024)+1)*1024-len(content))
@@ -69,7 +63,7 @@ func StartOTA(filename string) bool {
 
 	content = append(content, padding...)
 
-	defer os.RemoveAll(dir) // clean up
+	//defer os.RemoveAll(dir) // clean up
 
 	for i := 0; i < len(content); i = i + 1024 {
 		tmpfn := filepath.Join(dir, "otachunk"+strconv.Itoa(i))
@@ -91,6 +85,21 @@ func StartOTA(filename string) bool {
 	srvCLoser, err = ListenAndServeWithClose(":65201", handlers.LoggingHandler(os.Stdout, http.DefaultServeMux))
 
 	crcStr := strconv.FormatUint(uint64(crc32.ChecksumIEEE(content)), 10)
+
+	return crcStr
+}
+
+func StartOTA(crcStr string) bool {
+
+	port := 65500
+
+	BROADCAST_IPv4 := net.IPv4(255, 255, 255, 255)
+
+	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{
+		IP:   BROADCAST_IPv4,
+		Port: port,
+	})
+	checkError(err)
 
 	_, err = conn.Write([]byte("OTAUPLOADhttp://" + getIp() + ":65201/" + crcStr))
 	checkError(err)
